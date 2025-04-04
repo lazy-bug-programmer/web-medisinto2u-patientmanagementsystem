@@ -65,17 +65,11 @@ export async function getPatient(id: string): Promise<{
 }
 
 export async function createPatient(data: Patient): Promise<{ success?: string; error?: string }> {
-    try {
-        const client = await createAdminClient();
-        await client.databases.createDocument('Core', 'Patients', uuidv4(), data);
+    const client = await createAdminClient();
+    await client.databases.createDocument('Core', 'Patients', uuidv4(), data);
 
-        return {
-            success: "Create Patient successfully"
-        }
-    } catch {
-        return {
-            error: "Error creating Patient"
-        }
+    return {
+        success: "Create Patient successfully"
     }
 }
 
