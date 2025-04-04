@@ -169,18 +169,6 @@ export default function DashboardLayout({
             <div
               className={cn(
                 "flex h-12 items-center rounded-md px-4",
-                isActive("/dashboard") && !pathname.includes("/dashboard/")
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted"
-              )}
-            >
-              <Link href="/dashboard" className="w-full font-medium">
-                Dashboard
-              </Link>
-            </div>
-            <div
-              className={cn(
-                "flex h-12 items-center rounded-md px-4",
                 isActive("/dashboard/patients")
                   ? "bg-primary text-primary-foreground"
                   : "hover:bg-muted"
