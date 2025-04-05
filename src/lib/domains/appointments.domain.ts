@@ -15,6 +15,7 @@ export enum AppointmentType {
 export enum AppointmentAdmissionType {
     WALK_IN = 1,
     DAY_CARE = 2,
+    OVERNIGHT = 3
 }
 
 export enum AppointmentStatus {

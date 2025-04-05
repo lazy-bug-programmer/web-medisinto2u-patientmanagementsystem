@@ -292,6 +292,11 @@ export default function AppointmentEditPage() {
                             >
                               Day Care
                             </SelectItem>
+                            <SelectItem
+                              value={AppointmentAdmissionType.OVERNIGHT.toString()}
+                            >
+                              Overnight
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </FormControl>

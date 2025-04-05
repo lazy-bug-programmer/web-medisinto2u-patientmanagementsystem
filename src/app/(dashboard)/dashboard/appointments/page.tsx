@@ -131,7 +131,16 @@ export default function AppointmentsPage() {
   };
 
   const getAdmissionTypeName = (type: number) => {
-    return type === AppointmentAdmissionType.WALK_IN ? "Walk-in" : "Day care";
+    switch (type) {
+      case AppointmentAdmissionType.WALK_IN:
+        return "Walk-in";
+      case AppointmentAdmissionType.DAY_CARE:
+        return "Day care";
+      case AppointmentAdmissionType.OVERNIGHT:
+        return "Overnight";
+      default:
+        return "Unknown";
+    }
   };
 
   const getStatusBadge = (status: number) => {
