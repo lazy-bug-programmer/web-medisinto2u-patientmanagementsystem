@@ -5,8 +5,10 @@ export interface Patient {
     date_of_birth: Date;
     rn: string;
     passport_number: string;
+    phone1: string;
 
     // optional
+    phone2?: string;
     insurance_agent: string;
     insurance_plan: string;
 }

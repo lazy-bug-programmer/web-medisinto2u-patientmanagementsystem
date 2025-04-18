@@ -35,7 +35,11 @@ export default function PatientsPage() {
   const [patients, setPatients] = useState<Models.Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [rnFilter, setRnFilter] = useState("");
+  const [passportFilter, setPassportFilter] = useState("");
+  const [dobFilter, setDobFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isFilterVisible, setIsFilterVisible] = useState(false);
 
   // Delete confirmation state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -52,7 +56,15 @@ export default function PatientsPage() {
     async function fetchPatients() {
       setIsLoading(true);
       try {
-        const result = await getPatients(searchQuery || "", currentPage, limit);
+        const filters = {
+          search: searchQuery || "",
+          rn: rnFilter || "",
+          passport: passportFilter || "",
+          dob: dobFilter || "",
+        };
+
+        const result = await getPatients(filters, currentPage, limit);
+
         if (result.error) {
           setError(result.error);
         } else if (result.data) {
@@ -71,11 +83,38 @@ export default function PatientsPage() {
     }
 
     fetchPatients();
-  }, [searchQuery, currentPage, limit]);
+  }, [searchQuery, rnFilter, passportFilter, dobFilter, currentPage, limit]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
     setCurrentPage(1); // Reset to first page on new search
+  };
+
+  const handleRnFilter = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRnFilter(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handlePassportFilter = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassportFilter(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleDobFilter = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDobFilter(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setRnFilter("");
+    setPassportFilter("");
+    setDobFilter("");
+    setCurrentPage(1);
+  };
+
+  const toggleFilterVisibility = () => {
+    setIsFilterVisible(!isFilterVisible);
   };
 
   const handlePreviousPage = () => {
@@ -135,16 +174,71 @@ export default function PatientsPage() {
           <CardTitle>Patient Records</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="flex items-center justify-between border-b px-4 sm:px-6 py-4">
-            <div className="flex items-center gap-2 w-full max-w-sm">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search patients..."
-                className="h-9 border-none shadow-none focus-visible:ring-0"
-                value={searchQuery}
-                onChange={handleSearch}
-              />
+          <div className="flex flex-col border-b px-4 sm:px-6 py-4 gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 w-full max-w-sm">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search patients by name..."
+                  className="h-9 border-none shadow-none focus-visible:ring-0"
+                  value={searchQuery}
+                  onChange={handleSearch}
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleFilterVisibility}
+                className="whitespace-nowrap"
+              >
+                {isFilterVisible ? "Hide Filters" : "Show Filters"}
+              </Button>
             </div>
+
+            {isFilterVisible && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-sm font-medium block mb-1">
+                    Registration Number
+                  </label>
+                  <Input
+                    placeholder="Filter by RN"
+                    value={rnFilter}
+                    onChange={handleRnFilter}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">
+                    Passport Number
+                  </label>
+                  <Input
+                    placeholder="Filter by passport"
+                    value={passportFilter}
+                    onChange={handlePassportFilter}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">
+                    Date of Birth
+                  </label>
+                  <Input
+                    type="date"
+                    value={dobFilter}
+                    onChange={handleDobFilter}
+                  />
+                </div>
+                <div className="sm:col-span-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearFilters}
+                    className="w-full sm:w-auto"
+                  >
+                    Clear All Filters
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (

@@ -5,8 +5,14 @@ import { createAdminClient } from "../server";
 import { uuidv4 } from "@/lib/guid";
 import { Models, Query } from "node-appwrite";
 
+// Update the function parameters to accept filter object
 export async function getPatients(
-    name: string,
+    filters: {
+        search?: string;
+        rn?: string;
+        passport?: string;
+        dob?: string;
+    } = {},
     page: number = 1,
     limit: number = 10
 ): Promise<{
@@ -21,11 +27,37 @@ export async function getPatients(
 
         const offset = (page - 1) * limit;
 
+        // Build queries based on filters
         const queries = [
-            Query.contains("name", name),
             Query.limit(limit),
             Query.offset(offset)
         ];
+
+        // Add name filter if provided
+        if (filters.search) {
+            queries.push(Query.contains("name", filters.search));
+        }
+
+        // Add RN filter if provided
+        if (filters.rn) {
+            queries.push(Query.contains("rn", filters.rn));
+        }
+
+        // Add passport filter if provided
+        if (filters.passport) {
+            queries.push(Query.contains("passport_number", filters.passport));
+        }
+
+        // Add date of birth filter if provided
+        if (filters.dob) {
+            // For date filters, we need exact match since dates are stored in ISO format
+            // Convert the input date to the same format as stored in the database
+            const dateObj = new Date(filters.dob);
+            if (!isNaN(dateObj.getTime())) {
+                const isoDate = dateObj.toISOString().split('T')[0];
+                queries.push(Query.search("date_of_birth", isoDate));
+            }
+        }
 
         const patients = await client.databases.listDocuments('Core', 'Patients', queries);
 
@@ -37,7 +69,8 @@ export async function getPatients(
             total: patients.total,
             totalPages: totalPages
         }
-    } catch {
+    } catch (error) {
+        console.error("Error fetching patients:", error);
         return {
             error: "Error getting Patients"
         }

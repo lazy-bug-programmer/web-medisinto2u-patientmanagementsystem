@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,7 @@ import {
 } from "@/components/ui/form";
 import { useRouter, useParams } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { getPatients } from "@/lib/appwrite/actions/patient.action";
 import {
   getAppointment,
@@ -66,6 +67,16 @@ export default function AppointmentEditPage() {
   const [patients, setPatients] = useState<Models.Document[]>([]);
   const [isLoadingPatients, setIsLoadingPatients] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [debounceTimeout, setDebounceTimeout] = useState<NodeJS.Timeout | null>(
+    null
+  );
+
+  // Patient search states
+  const [nameSearch, setNameSearch] = useState("");
+  const [rnSearch, setRnSearch] = useState("");
+  const [passportSearch, setPassportSearch] = useState("");
+  const [dobSearch, setDobSearch] = useState("");
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
   // Default form values
   const form = useForm<AppointmentFormValues>({
@@ -79,6 +90,65 @@ export default function AppointmentEditPage() {
       status: AppointmentStatus.PENDING,
     },
   });
+
+  // Function to handle search with debounce for any field
+  const handleSearch = (
+    value: string,
+    setter: React.Dispatch<React.SetStateAction<string>>,
+    field: string
+  ) => {
+    setter(value);
+
+    // Clear any existing timeout
+    if (debounceTimeout) {
+      clearTimeout(debounceTimeout);
+    }
+
+    // Set a new timeout to fetch patients after 300ms
+    const timeout = setTimeout(() => {
+      const filters: any = {};
+
+      if (nameSearch) filters.search = nameSearch;
+      if (rnSearch) filters.rn = rnSearch;
+      if (passportSearch) filters.passport = passportSearch;
+      if (dobSearch) filters.dob = dobSearch;
+
+      // Update the field that just changed
+      if (field === "name") filters.search = value;
+      if (field === "rn") filters.rn = value;
+      if (field === "passport") filters.passport = value;
+      if (field === "dob") filters.dob = value;
+
+      fetchPatients(filters);
+    }, 300);
+
+    setDebounceTimeout(timeout);
+  };
+
+  // Function to fetch patients with search filters
+  const fetchPatients = async (filters: any) => {
+    setIsLoadingPatients(true);
+    try {
+      const result = await getPatients(filters, 1, 100);
+      if (result.data) {
+        setPatients(result.data);
+      }
+    } catch (error) {
+      console.error("Failed to load patients:", error);
+      toast("Failed to load patients. Please try again.");
+    } finally {
+      setIsLoadingPatients(false);
+    }
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setNameSearch("");
+    setRnSearch("");
+    setPassportSearch("");
+    setDobSearch("");
+    fetchPatients({});
+  };
 
   // Fetch appointment data and patients on component mount
   useEffect(() => {
@@ -114,12 +184,7 @@ export default function AppointmentEditPage() {
         });
 
         // Load patients list
-        setIsLoadingPatients(true);
-        const patientsResult = await getPatients("", 1, 10000);
-        if (patientsResult.data) {
-          setPatients(patientsResult.data);
-        }
-        setIsLoadingPatients(false);
+        fetchPatients({});
       } catch (err) {
         console.error("Error loading data:", err);
         setError("Failed to load appointment data");
@@ -129,6 +194,13 @@ export default function AppointmentEditPage() {
     }
 
     loadData();
+
+    // Clean up timeout on unmount
+    return () => {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+    };
   }, [appointmentId, form]);
 
   async function onSubmit(data: AppointmentFormValues) {
@@ -197,38 +269,165 @@ export default function AppointmentEditPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Patient</FormLabel>
-                      <FormControl>
-                        <Select
-                          disabled={isLoadingPatients}
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a patient" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {isLoadingPatients ? (
-                              <div className="flex items-center justify-center py-2">
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Loading patients...
-                              </div>
-                            ) : patients.length === 0 ? (
-                              <div className="p-2 text-center text-sm text-muted-foreground">
-                                No patients found
-                              </div>
-                            ) : (
-                              patients.map((patient) => (
-                                <SelectItem
-                                  key={patient.$id}
-                                  value={patient.$id}
-                                >
-                                  {patient.name}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </FormControl>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Search className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">
+                              Patient Search
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setIsSearchExpanded(!isSearchExpanded)
+                            }
+                            className="h-8 text-xs"
+                          >
+                            {isSearchExpanded
+                              ? "Simple Search"
+                              : "Advanced Search"}
+                          </Button>
+                        </div>
+
+                        {!isSearchExpanded ? (
+                          // Simple search - just name
+                          <Input
+                            placeholder="Search by name"
+                            value={nameSearch}
+                            onChange={(e) =>
+                              handleSearch(
+                                e.target.value,
+                                setNameSearch,
+                                "name"
+                              )
+                            }
+                            className="h-9"
+                          />
+                        ) : (
+                          // Advanced search - multiple fields
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                            <div>
+                              <label className="text-xs mb-1 block">Name</label>
+                              <Input
+                                placeholder="Search by name"
+                                value={nameSearch}
+                                onChange={(e) =>
+                                  handleSearch(
+                                    e.target.value,
+                                    setNameSearch,
+                                    "name"
+                                  )
+                                }
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs mb-1 block">
+                                Registration Number
+                              </label>
+                              <Input
+                                placeholder="Search by RN"
+                                value={rnSearch}
+                                onChange={(e) =>
+                                  handleSearch(
+                                    e.target.value,
+                                    setRnSearch,
+                                    "rn"
+                                  )
+                                }
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs mb-1 block">
+                                Passport
+                              </label>
+                              <Input
+                                placeholder="Search by passport"
+                                value={passportSearch}
+                                onChange={(e) =>
+                                  handleSearch(
+                                    e.target.value,
+                                    setPassportSearch,
+                                    "passport"
+                                  )
+                                }
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs mb-1 block">
+                                Date of Birth
+                              </label>
+                              <Input
+                                type="date"
+                                value={dobSearch}
+                                onChange={(e) =>
+                                  handleSearch(
+                                    e.target.value,
+                                    setDobSearch,
+                                    "dob"
+                                  )
+                                }
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={clearFilters}
+                                className="h-8 text-xs w-full"
+                              >
+                                Clear Filters
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {isLoadingPatients && (
+                          <div className="flex items-center text-sm text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                            Searching...
+                          </div>
+                        )}
+
+                        <FormControl>
+                          <Select
+                            disabled={isLoadingPatients}
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a patient" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[300px]">
+                              {patients.length === 0 ? (
+                                <div className="p-2 text-center text-sm text-muted-foreground">
+                                  No patients found
+                                </div>
+                              ) : (
+                                patients.map((patient) => (
+                                  <SelectItem
+                                    key={patient.$id}
+                                    value={patient.$id}
+                                  >
+                                    {patient.name} - {patient.rn}
+                                    {patient.passport_number &&
+                                      ` - Passport: ${patient.passport_number}`}
+                                    {patient.phone1 &&
+                                      ` - Phone: ${patient.phone1}`}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
