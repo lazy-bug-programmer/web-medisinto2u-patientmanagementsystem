@@ -11,12 +11,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Plus, Loader2, Trash2 } from "lucide-react";
+import { Search, Plus, Loader2, Trash2, Download } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   getPatients,
   deletePatient,
+  exportPatientsToExcel,
 } from "@/lib/appwrite/actions/patient.action";
 import { Models } from "node-appwrite";
 import {
@@ -30,6 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Models.Document[]>([]);
@@ -40,6 +42,7 @@ export default function PatientsPage() {
   const [dobFilter, setDobFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isFilterVisible, setIsFilterVisible] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Delete confirmation state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -158,16 +161,79 @@ export default function PatientsPage() {
     }
   };
 
+  const handleExportToExcel = async () => {
+    setIsExporting(true);
+    try {
+      const filters = {
+        search: searchQuery || "",
+        rn: rnFilter || "",
+        passport: passportFilter || "",
+        dob: dobFilter || "",
+      };
+
+      const result = await exportPatientsToExcel(filters);
+
+      if (result.error) {
+        toast(result.error);
+      } else if (result.data && result.data.length > 0) {
+        // Create a new workbook
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(result.data);
+
+        // Add the worksheet to the workbook
+        XLSX.utils.book_append_sheet(wb, ws, "Patients");
+
+        // Generate file name with current date
+        const date = new Date().toISOString().split("T")[0];
+        const fileName = `patients_export_${date}.xlsx`;
+
+        // Write to file and trigger download
+        XLSX.writeFile(wb, fileName);
+
+        toast("Patients data exported successfully");
+      } else {
+        toast("No patients data to export");
+      }
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      toast("Failed to export patients data");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <>
       <div className="flex items-center justify-between mb-4 flex-col sm:flex-row gap-2">
         <h2 className="text-2xl font-bold">Patients</h2>
-        <Button>
-          <Link href={"/dashboard/patients/new"} className="flex items-center">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Patient
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleExportToExcel}
+            disabled={isExporting}
+            variant="outline"
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Export to Excel
+              </>
+            )}
+          </Button>
+          <Button>
+            <Link
+              href={"/dashboard/patients/new"}
+              className="flex items-center"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Patient
+            </Link>
+          </Button>
+        </div>
       </div>
       <Card>
         <CardHeader className="px-4 sm:px-6 py-4">

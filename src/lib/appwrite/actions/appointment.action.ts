@@ -108,3 +108,78 @@ export async function deleteAppointment(id: string): Promise<{ success?: string;
         }
     }
 }
+
+export async function exportAppointmentsToExcel(): Promise<{
+    success?: string;
+    error?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data?: any[];
+}> {
+    try {
+        const client = await createAdminClient();
+
+        // Get all appointments without pagination
+        const appointments = await client.databases.listDocuments('Core', 'Appointments', []);
+
+        // Create a mapping of patient IDs to patient names for lookup
+        const patientIds = appointments.documents.map(app => app.patient_id).filter(Boolean);
+        const patientMap = new Map();
+
+        // Fetch patient data in batches if there are many patients
+        if (patientIds.length > 0) {
+            const uniquePatientIds = [...new Set(patientIds)];
+
+            for (const patientId of uniquePatientIds) {
+                try {
+                    const patientData = await client.databases.getDocument('Core', 'Patients', patientId);
+                    patientMap.set(patientId, patientData.name);
+                } catch (err) {
+                    console.error(`Error fetching patient ${patientId}:`, err);
+                    patientMap.set(patientId, "Unknown");
+                }
+            }
+        }
+
+        // Format data for Excel export
+        const formattedData = appointments.documents.map(appointment => {
+            const patientName = patientMap.get(appointment.patient_id) || "Unknown";
+
+            let appointmentType = "Unknown";
+            if (appointment.type === 1) appointmentType = "Medical Checkup";
+            if (appointment.type === 2) appointmentType = "Consultation";
+
+            let admissionType = "Unknown";
+            if (appointment.admission_type === 1) admissionType = "Walk-in";
+            if (appointment.admission_type === 2) admissionType = "Day Care";
+            if (appointment.admission_type === 3) admissionType = "Overnight";
+
+            let status = "Unknown";
+            if (appointment.status === 0) status = "Pending";
+            if (appointment.status === 1) status = "Confirmed";
+            if (appointment.status === 2) status = "Cancelled";
+            if (appointment.status === 3) status = "Completed";
+
+            return {
+                PatientName: patientName,
+                AppointmentType: appointmentType,
+                AdmissionType: admissionType,
+                Date: new Date(appointment.datetime).toLocaleDateString(),
+                Time: new Date(appointment.datetime).toLocaleTimeString(),
+                Doctor: appointment.doctor || "Not Assigned",
+                Status: status,
+                CreatedAt: new Date(appointment.$createdAt).toLocaleString(),
+                LastUpdated: new Date(appointment.$updatedAt).toLocaleString()
+            };
+        });
+
+        return {
+            success: "Appointments data prepared for export",
+            data: formattedData
+        };
+    } catch (error) {
+        console.error("Error preparing appointments data for export:", error);
+        return {
+            error: "Error preparing appointments data for export"
+        };
+    }
+}

@@ -1,6 +1,6 @@
 "use server"
 
-import { Patient } from "@/lib/domains/patients.domain";
+import { Patient, PatientGender } from "@/lib/domains/patients.domain";
 import { createAdminClient } from "../server";
 import { uuidv4 } from "@/lib/guid";
 import { Models, Query } from "node-appwrite";
@@ -133,5 +133,77 @@ export async function deletePatient(id: string): Promise<{ success?: string; err
         return {
             error: "Error deleting Patient"
         }
+    }
+}
+
+export async function exportPatientsToExcel(
+    filters: {
+        search?: string;
+        rn?: string;
+        passport?: string;
+        dob?: string;
+    } = {}
+): Promise<{
+    success?: string;
+    error?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data?: any[];
+}> {
+    try {
+        const client = await createAdminClient();
+
+        // Build queries based on filters (no pagination for export - get all filtered records)
+        const queries = [];
+
+        // Add name filter if provided
+        if (filters.search) {
+            queries.push(Query.contains("name", filters.search));
+        }
+
+        // Add RN filter if provided
+        if (filters.rn) {
+            queries.push(Query.contains("rn", filters.rn));
+        }
+
+        // Add passport filter if provided
+        if (filters.passport) {
+            queries.push(Query.contains("passport_number", filters.passport));
+        }
+
+        // Add date of birth filter if provided
+        if (filters.dob) {
+            const dateObj = new Date(filters.dob);
+            if (!isNaN(dateObj.getTime())) {
+                const isoDate = dateObj.toISOString().split('T')[0];
+                queries.push(Query.search("date_of_birth", isoDate));
+            }
+        }
+
+        const patients = await client.databases.listDocuments('Core', 'Patients', queries);
+
+        // Format data for Excel export
+        const formattedData = patients.documents.map(patient => ({
+            Name: patient.name,
+            Age: patient.age,
+            Gender: patient.gender === PatientGender.MALE ? 'Male' :
+                patient.gender === PatientGender.FEMALE ? 'Female' : 'Other',
+            DateOfBirth: new Date(patient.date_of_birth).toLocaleDateString(),
+            RegistrationNumber: patient.rn,
+            PassportNumber: patient.passport_number,
+            PrimaryPhone: patient.phone1,
+            SecondaryPhone: patient.phone2 || '',
+            InsuranceAgent: patient.insurance_agent || '',
+            InsurancePlan: patient.insurance_plan || ''
+        }));
+
+        return {
+            success: "Patients data prepared for export",
+            data: formattedData
+        };
+    } catch (error) {
+        console.error("Error preparing patients data for export:", error);
+        return {
+            error: "Error preparing patients data for export"
+        };
     }
 }

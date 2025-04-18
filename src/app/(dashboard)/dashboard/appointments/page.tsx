@@ -11,11 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Loader2, Trash2 } from "lucide-react";
+import { Plus, Loader2, Trash2, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   getAppointments,
   deleteAppointment,
+  exportAppointmentsToExcel,
 } from "@/lib/appwrite/actions/appointment.action";
 import { getPatient } from "@/lib/appwrite/actions/patient.action";
 import { Models } from "node-appwrite";
@@ -35,6 +36,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 // Define type for appointment with patient data
 interface AppointmentWithPatient extends Models.Document {
@@ -60,6 +62,9 @@ export default function AppointmentsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [limit] = useState(10);
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     async function fetchAppointments() {
@@ -209,16 +214,69 @@ export default function AppointmentsPage() {
     }
   };
 
+  const handleExportToExcel = async () => {
+    setIsExporting(true);
+    try {
+      const result = await exportAppointmentsToExcel();
+
+      if (result.error) {
+        toast(result.error);
+      } else if (result.data && result.data.length > 0) {
+        // Create a new workbook
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(result.data);
+
+        // Add the worksheet to the workbook
+        XLSX.utils.book_append_sheet(wb, ws, "Appointments");
+
+        // Generate file name with current date
+        const date = new Date().toISOString().split("T")[0];
+        const fileName = `appointments_export_${date}.xlsx`;
+
+        // Write to file and trigger download
+        XLSX.writeFile(wb, fileName);
+
+        toast("Appointments data exported successfully");
+      } else {
+        toast("No appointments data to export");
+      }
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      toast("Failed to export appointments data");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <>
       <div className="flex items-center justify-between mb-4 flex-col sm:flex-row gap-2">
         <h2 className="text-2xl font-bold">Appointments</h2>
-        <Link href="/dashboard/appointments/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Appointment
+        <div className="flex gap-2">
+          <Button
+            onClick={handleExportToExcel}
+            disabled={isExporting}
+            variant="outline"
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Export to Excel
+              </>
+            )}
           </Button>
-        </Link>
+          <Link href="/dashboard/appointments/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Appointment
+            </Button>
+          </Link>
+        </div>
       </div>
       <Card>
         <CardHeader className="px-4 sm:px-6 py-4">
