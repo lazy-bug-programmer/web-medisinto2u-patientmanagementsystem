@@ -16,9 +16,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useState } from "react";
 import { toast } from "sonner";
-import { logoutUser } from "@/lib/appwrite/actions/auth.action";
 import { createClient } from "@/lib/appwrite/client";
-import { setCookie } from "typescript-cookie";
+import { setCookie, removeCookie, getCookie } from "typescript-cookie";
 import { useRouter } from "next/navigation";
 
 // Define the schema for the login form
@@ -49,8 +48,14 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      await logoutUser();
-      await client.account.createEmailPasswordSession(
+      const sessionId = getCookie("user-session-id");
+      removeCookie("user-session");
+      removeCookie("user-session-id");
+      await client.account.deleteSession(sessionId!);
+    } catch {}
+
+    try {
+      const session = await client.account.createEmailPasswordSession(
         data.email,
         data.password
       );
@@ -60,6 +65,7 @@ export default function Login() {
           Object.values(JSON.parse(localStorage.getItem("cookieFallback")!))[0]
         )
       );
+      setCookie("user-session-id", session.$id);
 
       router.push("/dashboard");
     } catch {
