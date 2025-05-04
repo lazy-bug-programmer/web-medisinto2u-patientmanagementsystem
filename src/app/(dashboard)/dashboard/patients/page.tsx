@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -11,13 +12,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Plus, Loader2, Trash2, Download } from "lucide-react";
+import { Search, Plus, Loader2, Trash2, Download, Upload } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   getPatients,
   deletePatient,
   exportPatientsToExcel,
+  importPatientsFromCSV,
 } from "@/lib/appwrite/actions/patient.action";
 import { Models } from "node-appwrite";
 import {
@@ -32,6 +34,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import Papa from "papaparse";
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Models.Document[]>([]);
@@ -43,6 +46,11 @@ export default function PatientsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStats, setImportStats] = useState<{
+    successful: number;
+    failed: number;
+  } | null>(null);
 
   // Delete confirmation state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -202,6 +210,83 @@ export default function PatientsPage() {
     }
   };
 
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportStats(null);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const data = results.data;
+
+        try {
+          console.log(`Processing ${data.length} rows from CSV`);
+
+          // Pass the CSV data directly to the import function
+          // The data transformation is now handled server-side
+          const result = await importPatientsFromCSV(data);
+
+          if (result.success) {
+            setImportStats({
+              successful: result.data.successful,
+              failed: result.data.failed,
+            });
+
+            if (result.data.successful > 0) {
+              toast.success(
+                `Import completed: ${result.data.successful} patients imported, ${result.data.failed} skipped or failed`
+              );
+            } else {
+              toast.warning(
+                `No patients imported. ${result.data.failed} rows skipped or failed.`
+              );
+            }
+
+            // Refresh the patient list
+            const filters = {
+              search: searchQuery || "",
+              rn: rnFilter || "",
+              passport: passportFilter || "",
+              dob: dobFilter || "",
+            };
+
+            const refreshResult = await getPatients(
+              filters,
+              currentPage,
+              limit
+            );
+            if (refreshResult.data) {
+              setPatients(refreshResult.data);
+              if (refreshResult.totalPages) {
+                setTotalPages(refreshResult.totalPages);
+              }
+            }
+          } else {
+            toast.error(result.error || "Failed to import patients");
+          }
+        } catch (error) {
+          console.error("Error processing import:", error);
+          toast.error("Error processing the CSV file");
+        } finally {
+          setIsImporting(false);
+          // Reset the file input
+          event.target.value = "";
+        }
+      },
+      error: (error) => {
+        console.error("Error parsing CSV:", error);
+        toast.error("Error parsing the CSV file");
+        setIsImporting(false);
+        // Reset the file input
+        event.target.value = "";
+      },
+    });
+  };
+
   return (
     <>
       <div className="flex items-center justify-between mb-4 flex-col sm:flex-row gap-2">
@@ -224,6 +309,31 @@ export default function PatientsPage() {
               </>
             )}
           </Button>
+
+          <div className="relative">
+            <input
+              type="file"
+              id="csv-upload"
+              accept=".csv"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              onChange={handleFileUpload}
+              disabled={isImporting}
+            />
+            <Button variant="outline" disabled={isImporting}>
+              {isImporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import CSV
+                </>
+              )}
+            </Button>
+          </div>
+
           <Button>
             <Link
               href={"/dashboard/patients/new"}
@@ -235,6 +345,21 @@ export default function PatientsPage() {
           </Button>
         </div>
       </div>
+
+      {importStats && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
+          <h3 className="font-medium text-green-800">Import Summary</h3>
+          <p className="text-sm text-green-700">
+            Successfully imported: {importStats.successful} patients
+            {importStats.failed > 0 && (
+              <span className="text-orange-500 ml-2">
+                (Failed: {importStats.failed})
+              </span>
+            )}
+          </p>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="px-4 sm:px-6 py-4">
           <CardTitle>Patient Records</CardTitle>

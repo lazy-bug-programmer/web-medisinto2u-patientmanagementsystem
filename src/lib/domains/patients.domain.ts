@@ -18,3 +18,16 @@ export enum PatientGender {
     FEMALE = 2,
     OTHER = 3,
 }
+
+export interface PatientDomain {
+    name: string;
+    gender: number; // 1 for male, 2 for female
+    age: number | null;
+    date_of_birth: string | null; // ISO string format
+    rn: string; // Registration Number
+    passport_number: string;
+    primary_phone: string;
+    secondary_phone: string;
+    insurance_agent: string;
+    insurance_plan: string;
+}
