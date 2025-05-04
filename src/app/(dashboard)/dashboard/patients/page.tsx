@@ -236,13 +236,17 @@ export default function PatientsPage() {
               failed: result.data!.failed,
             });
 
-            if (result.data.successful > 0) {
+            if (result.data!.successful > 0) {
               toast.success(
-                `Import completed: ${result.data.successful} patients imported, ${result.data.failed} skipped or failed`
+                `Import completed: ${
+                  result.data!.successful
+                } patients imported, ${result.data!.failed} skipped or failed`
               );
             } else {
               toast.warning(
-                `No patients imported. ${result.data.failed} rows skipped or failed.`
+                `No patients imported. ${
+                  result.data!.failed
+                } rows skipped or failed.`
               );
             }
 
