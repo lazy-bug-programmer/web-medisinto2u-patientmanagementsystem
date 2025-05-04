@@ -232,8 +232,8 @@ export default function PatientsPage() {
 
           if (result.success) {
             setImportStats({
-              successful: result.data.successful,
-              failed: result.data.failed,
+              successful: result.data!.successful,
+              failed: result.data!.failed,
             });
 
             if (result.data.successful > 0) {
