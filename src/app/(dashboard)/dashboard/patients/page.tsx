@@ -50,6 +50,7 @@ export default function PatientsPage() {
   const [importStats, setImportStats] = useState<{
     successful: number;
     failed: number;
+    duplicatesSkipped: number;
   } | null>(null);
 
   // Delete confirmation state
@@ -218,7 +219,7 @@ export default function PatientsPage() {
     setImportStats(null);
 
     Papa.parse(file, {
-      header: true,
+      header: false,
       skipEmptyLines: true,
       complete: async (results) => {
         const data = results.data;
@@ -234,18 +235,24 @@ export default function PatientsPage() {
             setImportStats({
               successful: result.data!.successful,
               failed: result.data!.failed,
+              duplicatesSkipped: result.data!.duplicatesSkipped || 0,
             });
 
             if (result.data!.successful > 0) {
+              const duplicateMessage = result.data!.duplicatesSkipped
+                ? `, ${result.data!.duplicatesSkipped} duplicates skipped`
+                : "";
               toast.success(
-                `Import completed: ${
-                  result.data!.successful
-                } patients imported, ${result.data!.failed} skipped or failed`
+                `Import completed: ${result.data!.successful
+                } patients imported${duplicateMessage}, ${result.data!.failed
+                } skipped or failed`
               );
             } else {
+              const duplicateMessage = result.data!.duplicatesSkipped
+                ? ` ${result.data!.duplicatesSkipped} duplicates skipped.`
+                : "";
               toast.warning(
-                `No patients imported. ${
-                  result.data!.failed
+                `No patients imported.${duplicateMessage} ${result.data!.failed
                 } rows skipped or failed.`
               );
             }
@@ -355,6 +362,11 @@ export default function PatientsPage() {
           <h3 className="font-medium text-green-800">Import Summary</h3>
           <p className="text-sm text-green-700">
             Successfully imported: {importStats.successful} patients
+            {importStats.duplicatesSkipped > 0 && (
+              <span className="text-orange-500 ml-2">
+                (Duplicates skipped: {importStats.duplicatesSkipped})
+              </span>
+            )}
             {importStats.failed > 0 && (
               <span className="text-orange-500 ml-2">
                 (Failed: {importStats.failed})

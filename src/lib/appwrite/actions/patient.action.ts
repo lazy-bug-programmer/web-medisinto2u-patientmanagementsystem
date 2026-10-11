@@ -6,6 +6,29 @@ import { createAdminClient } from "../server";
 import { uuidv4 } from "@/lib/guid";
 import { Models, Query } from "node-appwrite";
 
+type PatientImportRow = {
+    Name?: string;
+    RegistrationNumber?: string;
+    PassportNumber?: string;
+    Gender?: string;
+    Age?: string;
+    DateOfBirth?: string;
+    PrimaryPhone?: string;
+    SecondaryPhone?: string;
+    InsuranceAgent?: string;
+    InsurancePlan?: string;
+};
+
+type PatientImportInput = PatientImportRow | string[];
+
+type PatientIdentityIndex = {
+    rn: Set<string>;
+    passport: Set<string>;
+    nameDob: Set<string>;
+};
+
+const PATIENT_IMPORT_BATCH_SIZE = 100;
+
 /**
  * Imports patients from CSV data
  * @param patientsData Array of patient data objects
@@ -15,16 +38,24 @@ export async function importPatientsFromCSV(patientsData: any[]) {
     try {
         const client = await createAdminClient();
         const databases = client.databases;
+        const existingPatients = await loadExistingPatientIdentityIndex(databases);
 
         // Track successful and failed imports
         let successful = 0;
         let failed = 0;
+        let duplicatesSkipped = 0;
         const errors: string[] = [];
-        const processedRNs = new Set(); // To prevent duplicates by RN
+        const processedPatients: PatientIdentityIndex = {
+            rn: new Set(),
+            passport: new Set(),
+            nameDob: new Set(),
+        };
 
         // Process each patient
-        for (const patient of patientsData) {
+        for (const rawPatient of patientsData as PatientImportInput[]) {
             try {
+                const patient = normalizeImportRow(rawPatient);
+
                 // Skip empty rows or rows without key identifiers
                 if ((!patient.Name || patient.Name.trim() === '') &&
                     (!patient.RegistrationNumber || patient.RegistrationNumber.trim() === '') &&
@@ -32,14 +63,28 @@ export async function importPatientsFromCSV(patientsData: any[]) {
                     continue;
                 }
 
-                // Skip if this registration number was already processed
-                const rn = patient.RegistrationNumber?.trim();
-                if (rn && processedRNs.has(rn)) {
+                if (isHeaderRow(patient)) {
                     continue;
                 }
 
-                if (rn) {
-                    processedRNs.add(rn);
+                const identity = buildPatientIdentity(patient);
+
+                // Skip if this patient already exists in the database or was processed in this upload
+                if (isDuplicatePatient(identity, existingPatients, processedPatients)) {
+                    duplicatesSkipped++;
+                    continue;
+                }
+
+                if (identity.rn) {
+                    processedPatients.rn.add(identity.rn);
+                }
+
+                if (identity.passport) {
+                    processedPatients.passport.add(identity.passport);
+                }
+
+                if (identity.nameDob) {
+                    processedPatients.nameDob.add(identity.nameDob);
                 }
 
                 // Parse gender - default to female if not specified
@@ -107,8 +152,12 @@ export async function importPatientsFromCSV(patientsData: any[]) {
             } catch (err) {
                 failed++;
                 if (err instanceof Error) {
-                    errors.push(`Error importing ${patient.Name || 'unnamed patient'}: ${err.message}`);
-                    console.error(`Import error for ${patient.Name || 'unnamed'}:`, err);
+                    const importLabel = Array.isArray(rawPatient)
+                        ? normalizeText(rawPatient[0]) || 'unnamed patient'
+                        : normalizeText(rawPatient?.Name) || 'unnamed patient';
+
+                    errors.push(`Error importing ${importLabel}: ${err.message}`);
+                    console.error(`Import error for ${importLabel}:`, err);
                 }
             }
         }
@@ -118,6 +167,7 @@ export async function importPatientsFromCSV(patientsData: any[]) {
             data: {
                 successful,
                 failed,
+                duplicatesSkipped,
                 errors: errors.length > 0 ? errors : null
             }
         };
@@ -128,6 +178,149 @@ export async function importPatientsFromCSV(patientsData: any[]) {
             error: "Failed to import patients"
         };
     }
+}
+
+async function loadExistingPatientIdentityIndex(databases: Awaited<ReturnType<typeof createAdminClient>>["databases"]): Promise<PatientIdentityIndex> {
+    const index: PatientIdentityIndex = {
+        rn: new Set(),
+        passport: new Set(),
+        nameDob: new Set(),
+    };
+
+    let offset = 0;
+
+    while (true) {
+        const result = await databases.listDocuments('Core', 'Patients', [
+            Query.limit(PATIENT_IMPORT_BATCH_SIZE),
+            Query.offset(offset),
+        ]);
+
+        for (const patient of result.documents) {
+            const rn = normalizeIdentityValue(patient.rn);
+            const passport = normalizeIdentityValue(patient.passport_number);
+            const nameDob = buildNameDobKey(patient.name, patient.date_of_birth);
+
+            if (rn) {
+                index.rn.add(rn);
+            }
+
+            if (passport) {
+                index.passport.add(passport);
+            }
+
+            if (nameDob) {
+                index.nameDob.add(nameDob);
+            }
+        }
+
+        if (result.documents.length < PATIENT_IMPORT_BATCH_SIZE) {
+            break;
+        }
+
+        offset += result.documents.length;
+    }
+
+    return index;
+}
+
+function buildPatientIdentity(patient: PatientImportRow) {
+    const rn = normalizeIdentityValue(patient.RegistrationNumber);
+    const passport = normalizeIdentityValue(patient.PassportNumber);
+    const nameDob = buildNameDobKey(patient.Name, patient.DateOfBirth);
+
+    return { rn, passport, nameDob };
+}
+
+function isDuplicatePatient(
+    identity: { rn: string; passport: string; nameDob: string },
+    existingPatients: PatientIdentityIndex,
+    processedPatients: PatientIdentityIndex
+) {
+    if (identity.rn && (existingPatients.rn.has(identity.rn) || processedPatients.rn.has(identity.rn))) {
+        return true;
+    }
+
+    if (identity.passport && (existingPatients.passport.has(identity.passport) || processedPatients.passport.has(identity.passport))) {
+        return true;
+    }
+
+    if (identity.nameDob && (existingPatients.nameDob.has(identity.nameDob) || processedPatients.nameDob.has(identity.nameDob))) {
+        return true;
+    }
+
+    return false;
+}
+
+function normalizeIdentityValue(value?: string | null) {
+    return normalizeText(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function normalizeText(value?: string | null) {
+    return (value || '').trim().replace(/\s+/g, ' ');
+}
+
+function buildNameDobKey(name?: string | null, dateOfBirth?: string | null) {
+    const normalizedName = normalizeText(name).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ');
+    const normalizedDate = normalizeDateValue(dateOfBirth);
+
+    if (!normalizedName || !normalizedDate) {
+        return '';
+    }
+
+    return `${normalizedName}|${normalizedDate}`;
+}
+
+function normalizeImportRow(row: PatientImportInput): PatientImportRow {
+    const record = row as Record<string, any>;
+
+    if (Array.isArray(row)) {
+        return {
+            Name: normalizeText(row[0]),
+            RegistrationNumber: normalizeText(row[1]),
+            PassportNumber: normalizeText(row[2]),
+            DateOfBirth: normalizeText(row[3]),
+            InsurancePlan: normalizeText(row[4]),
+            InsuranceAgent: normalizeText(row[5]),
+        };
+    }
+
+    return {
+        Name: normalizeText(record.Name ?? record.name),
+        RegistrationNumber: normalizeText(record.RegistrationNumber ?? record.rn ?? record.RN),
+        PassportNumber: normalizeText(record.PassportNumber ?? record.passport_number ?? record.passport),
+        Gender: normalizeText(record.Gender ?? record.gender),
+        Age: normalizeText(record.Age ?? record.age),
+        DateOfBirth: normalizeText(record.DateOfBirth ?? record.date_of_birth ?? record.dob),
+        PrimaryPhone: normalizeText(record.PrimaryPhone ?? record.phone1),
+        SecondaryPhone: normalizeText(record.SecondaryPhone ?? record.phone2),
+        InsuranceAgent: normalizeText(record.InsuranceAgent ?? record.insurance_agent),
+        InsurancePlan: normalizeText(record.InsurancePlan ?? record.insurance_plan),
+    };
+}
+
+function isHeaderRow(patient: PatientImportRow) {
+    const name = patient.Name?.toLowerCase();
+    const rn = patient.RegistrationNumber?.toLowerCase();
+    const passport = patient.PassportNumber?.toLowerCase();
+
+    return (
+        name === 'name' ||
+        rn === 'registrationnumber' || rn === 'registration number' || rn === 'rn' ||
+        passport === 'passportnumber' || passport === 'passport number'
+    );
+}
+
+function normalizeDateValue(dateValue?: string | null) {
+    if (!dateValue) {
+        return '';
+    }
+
+    const parsedDate = parseDate(dateValue);
+    if (parsedDate) {
+        return parsedDate.toISOString().split('T')[0];
+    }
+
+    return normalizeText(dateValue).toLowerCase();
 }
 
 // Helper function to parse various date formats
